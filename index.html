@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ゴーストタイピングレース</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .cursor-you { border-bottom: 3px solid #6366f1; }
+  .cursor-ghost { border-bottom: 3px solid #f59e0b; }
+  .char-correct { color: #86efac; }
+  .char-wrong { color: #f87171; background: #450a0a; }
+  .char-pending { color: #6b7280; }
+  .char-current { background: #1e3a8a; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .blink { animation: blink 1s infinite; }
+</style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+<div class="max-w-3xl mx-auto p-4">
+  <h1 class="text-3xl font-bold text-center text-indigo-400 mb-1">ゴーストタイピングレース</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">自分の過去ベストと対決しよう</p>
+
+  <!-- コース選択 -->
+  <div class="mb-4 flex gap-2 flex-wrap justify-center">
+    <button onclick="selectCourse('programming')" id="btn-programming" class="course-btn bg-indigo-700 px-3 py-1 rounded text-sm">プログラミング</button>
+    <button onclick="selectCourse('literature')" id="btn-literature" class="course-btn bg-gray-700 px-3 py-1 rounded text-sm">文学</button>
+    <button onclick="selectCourse('news')" id="btn-news" class="course-btn bg-gray-700 px-3 py-1 rounded text-sm">ニュース</button>
+    <button onclick="selectCourse('science')" id="btn-science" class="course-btn bg-gray-700 px-3 py-1 rounded text-sm">科学</button>
+  </div>
+
+  <!-- レース画面 -->
+  <div class="bg-gray-800 rounded-xl p-4 mb-4">
+    <!-- プログレスバー -->
+    <div class="mb-3">
+      <div class="flex justify-between text-xs text-gray-400 mb-1">
+        <span>あなた <span id="you-pct" class="text-indigo-400">0%</span></span>
+        <span>ゴースト <span id="ghost-pct" class="text-yellow-400">0%</span></span>
+      </div>
+      <div class="relative h-4 bg-gray-700 rounded-full overflow-hidden mb-1">
+        <div id="you-bar" class="h-full bg-indigo-500 transition-all duration-100" style="width:0%"></div>
+      </div>
+      <div class="relative h-4 bg-gray-700 rounded-full overflow-hidden">
+        <div id="ghost-bar" class="h-full bg-yellow-500 transition-all duration-100" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- テキスト表示 -->
+    <div id="text-display" class="font-mono text-lg leading-relaxed bg-gray-900 rounded p-3 mb-3 min-h-20 tracking-wide select-none"></div>
+
+    <!-- 入力欄 -->
+    <input id="type-input" type="text" autocomplete="off" autocorrect="off" spellcheck="false"
+      class="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-indigo-400"
+      placeholder="ここに入力してください（スペースで開始）"
+      oninput="handleInput()" onkeydown="handleKeydown(event)">
+  </div>
+
+  <!-- スタッツ -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="bg-gray-800 rounded-lg p-3 text-center">
+      <div class="text-xs text-gray-400">WPM</div>
+      <div id="wpm" class="text-2xl font-bold text-cyan-300">-</div>
+    </div>
+    <div class="bg-gray-800 rounded-lg p-3 text-center">
+      <div class="text-xs text-gray-400">ゴーストWPM</div>
+      <div id="ghost-wpm" class="text-2xl font-bold text-yellow-300">-</div>
+    </div>
+    <div class="bg-gray-800 rounded-lg p-3 text-center">
+      <div class="text-xs text-gray-400">正確率</div>
+      <div id="accuracy" class="text-2xl font-bold text-green-300">-</div>
+    </div>
+    <div class="bg-gray-800 rounded-lg p-3 text-center">
+      <div class="text-xs text-gray-400">差（WPM）</div>
+      <div id="diff-wpm" class="text-2xl font-bold">-</div>
+    </div>
+  </div>
+
+  <!-- 結果・ランキング -->
+  <div id="result-area" class="hidden bg-gray-800 rounded-xl p-4 mb-4">
+    <div id="result-title" class="text-xl font-bold text-center mb-2"></div>
+    <div id="result-detail" class="text-sm text-gray-300 text-center mb-3"></div>
+    <button onclick="startRace()" class="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded-lg">もう一度</button>
+  </div>
+
+  <div class="bg-gray-800 rounded-xl p-4">
+    <div class="text-sm text-indigo-400 font-bold mb-2">コース別ベスト</div>
+    <div id="rankings" class="space-y-1 text-sm"></div>
+  </div>
+</div>
+
+<script>
+function escapeHtml(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
+
+const COURSES = {
+  programming: [
+    "The quick brown fox jumps over the lazy dog",
+    "function fibonacci(n) { return n <= 1 ? n : fibonacci(n-1) + fibonacci(n-2); }",
+    "const arr = [1, 2, 3, 4, 5].map(x => x * x).filter(x => x > 4);",
+    "class Node { constructor(val) { this.val = val; this.next = null; } }",
+    "import React, { useState, useEffect } from 'react';",
+  ],
+  literature: [
+    "It was the best of times, it was the worst of times.",
+    "To be or not to be, that is the question.",
+    "All happy families are alike; each unhappy family is unhappy in its own way.",
+    "Call me Ishmael. Some years ago, I thought I would sail about.",
+    "It is a truth universally acknowledged that a single man must be in want of a wife.",
+  ],
+  news: [
+    "Scientists have discovered a new species of deep-sea fish.",
+    "The global economy continues to recover from recent disruptions.",
+    "Researchers announce breakthrough in renewable energy storage.",
+    "Technology companies report strong quarterly earnings results.",
+    "World leaders gather for annual climate summit discussions.",
+  ],
+  science: [
+    "E equals mc squared represents mass-energy equivalence.",
+    "The speed of light in vacuum is approximately 299792458 meters per second.",
+    "DNA consists of two polynucleotide chains forming a double helix.",
+    "Photosynthesis converts carbon dioxide and water into glucose and oxygen.",
+    "The periodic table organizes elements by atomic number and properties.",
+  ],
+};
+
+let currentCourse = 'programming';
+let currentText = '';
+let typedIndex = 0;
+let startTime = null;
+let ghostStartTime = null;
+let ghostWpm = 0;
+let isRunning = false;
+let errorCount = 0;
+let totalTyped = 0;
+let ghostInterval = null;
+let ghostProgress = 0;
+
+function loadRankings() {
+  return JSON.parse(localStorage.getItem('ghost-typing-rankings')||'{}');
+}
+function saveRanking(course, wpm, accuracy) {
+  const rankings = loadRankings();
+  if(!rankings[course] || wpm > rankings[course].wpm) {
+    rankings[course] = {wpm, accuracy, date: new Date().toLocaleDateString('ja-JP')};
+    localStorage.setItem('ghost-typing-rankings', JSON.stringify(rankings));
+  }
+  renderRankings();
+}
+function renderRankings() {
+  const rankings = loadRankings();
+  const el = document.getElementById('rankings');
+  const courseNames = {programming:'プログラミング', literature:'文学', news:'ニュース', science:'科学'};
+  el.innerHTML = Object.entries(courseNames).map(([k,v]) => {
+    const r = rankings[k];
+    return `<div class="flex justify-between items-center py-1 border-b border-gray-700">
+      <span class="text-gray-400">${escapeHtml(v)}</span>
+      ${r ? `<span class="text-cyan-300 font-bold">${r.wpm} WPM</span><span class="text-gray-500 text-xs">${escapeHtml(r.date)}</span>` : '<span class="text-gray-600">未プレイ</span>'}
+    </div>`;
+  }).join('');
+}
+
+function selectCourse(course) {
+  currentCourse = course;
+  document.querySelectorAll('.course-btn').forEach(b => b.className = b.className.replace('bg-indigo-700','bg-gray-700'));
+  document.getElementById('btn-'+course).className = document.getElementById('btn-'+course).className.replace('bg-gray-700','bg-indigo-700');
+  startRace();
+}
+
+function startRace() {
+  const texts = COURSES[currentCourse];
+  currentText = texts[Math.floor(Math.random()*texts.length)];
+  typedIndex = 0;
+  startTime = null;
+  isRunning = false;
+  errorCount = 0;
+  totalTyped = 0;
+  ghostProgress = 0;
+
+  // ゴーストデータ読み込み
+  const rankings = loadRankings();
+  ghostWpm = rankings[currentCourse]?.wpm || 0;
+
+  document.getElementById('type-input').value = '';
+  document.getElementById('type-input').disabled = false;
+  document.getElementById('result-area').classList.add('hidden');
+  document.getElementById('wpm').textContent = '-';
+  document.getElementById('ghost-wpm').textContent = ghostWpm > 0 ? ghostWpm : '-';
+  document.getElementById('accuracy').textContent = '-';
+  document.getElementById('diff-wpm').textContent = '-';
+  document.getElementById('you-bar').style.width = '0%';
+  document.getElementById('ghost-bar').style.width = '0%';
+  document.getElementById('you-pct').textContent = '0%';
+  document.getElementById('ghost-pct').textContent = '0%';
+
+  if(ghostInterval) clearInterval(ghostInterval);
+
+  renderText();
+  document.getElementById('type-input').focus();
+  document.getElementById('type-input').placeholder = '入力開始でレーススタート！';
+}
+
+function renderText() {
+  const el = document.getElementById('text-display');
+  let html = '';
+  for(let i=0; i<currentText.length; i++) {
+    const ch = escapeHtml(currentText[i]);
+    if(i < typedIndex) {
+      const inputCh = document.getElementById('type-input').value[i];
+      if(inputCh === currentText[i]) html += `<span class="char-correct">${ch}</span>`;
+      else html += `<span class="char-wrong">${ch}</span>`;
+    } else if(i === typedIndex) {
+      html += `<span class="char-current">${ch}</span>`;
+    } else {
+      html += `<span class="char-pending">${ch}</span>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+function handleKeydown(e) {
+  if(e.key === 'Backspace') {
+    // 後退を許可
+  }
+}
+
+function handleInput() {
+  const input = document.getElementById('type-input');
+  const val = input.value;
+
+  if(!isRunning && val.length > 0) {
+    isRunning = true;
+    startTime = Date.now();
+    // ゴーストスタート
+    if(ghostWpm > 0) {
+      ghostStartTime = Date.now();
+      ghostInterval = setInterval(updateGhost, 100);
+    }
+  }
+
+  if(!isRunning) return;
+
+  // 正しい文字数を計算
+  let correct = 0;
+  for(let i=0; i<Math.min(val.length, currentText.length); i++) {
+    if(val[i] === currentText[i]) correct++;
+  }
+  typedIndex = val.length;
+  totalTyped = val.length;
+
+  // エラー数
+  let errs = 0;
+  for(let i=0; i<val.length; i++) {
+    if(i < currentText.length && val[i] !== currentText[i]) errs++;
+  }
+  errorCount = errs;
+
+  // WPM計算
+  const elapsed = (Date.now() - startTime) / 60000;
+  const wpm = elapsed > 0 ? Math.round((correct/5) / elapsed) : 0;
+  document.getElementById('wpm').textContent = wpm;
+
+  // 正確率
+  const acc = totalTyped > 0 ? Math.round(((totalTyped - errorCount) / totalTyped) * 100) : 100;
+  document.getElementById('accuracy').textContent = acc + '%';
+
+  // 差
+  const diff = wpm - ghostWpm;
+  const diffEl = document.getElementById('diff-wpm');
+  diffEl.textContent = (diff >= 0 ? '+' : '') + diff;
+  diffEl.className = `text-2xl font-bold ${diff >= 0 ? 'text-green-400' : 'text-red-400'}`;
+
+  // プログレス
+  const pct = Math.round((typedIndex / currentText.length) * 100);
+  document.getElementById('you-bar').style.width = pct + '%';
+  document.getElementById('you-pct').textContent = pct + '%';
+
+  renderText();
+
+  // 完了チェック
+  if(val === currentText || (val.length >= currentText.length && errs === 0)) {
+    finishRace(wpm, acc);
+    return;
+  }
+  // 全部打った（誤りあり）でも長さが一致したら完了判定は難しいので、正しい部分のみ
+  if(val.length >= currentText.length) {
+    let allCorrect = true;
+    for(let i=0; i<currentText.length; i++) {
+      if(val[i] !== currentText[i]) { allCorrect = false; break; }
+    }
+    if(allCorrect) finishRace(wpm, acc);
+  }
+}
+
+function updateGhost() {
+  if(!ghostStartTime || ghostWpm <= 0) return;
+  const elapsed = (Date.now() - ghostStartTime) / 60000;
+  const charsTyped = (ghostWpm * 5) * elapsed;
+  const pct = Math.min(100, Math.round((charsTyped / currentText.length) * 100));
+  document.getElementById('ghost-bar').style.width = pct + '%';
+  document.getElementById('ghost-pct').textContent = pct + '%';
+  if(pct >= 100) clearInterval(ghostInterval);
+}
+
+function finishRace(wpm, acc) {
+  if(ghostInterval) clearInterval(ghostInterval);
+  isRunning = false;
+  document.getElementById('type-input').disabled = true;
+
+  const rankings = loadRankings();
+  const prevBest = rankings[currentCourse]?.wpm || 0;
+  const isNew = wpm > prevBest;
+
+  saveRanking(currentCourse, wpm, acc);
+
+  const ra = document.getElementById('result-area');
+  ra.classList.remove('hidden');
+  document.getElementById('result-title').innerHTML = isNew
+    ? `<span class="text-green-400">🏆 新記録！ ${wpm} WPM</span>`
+    : `<span class="text-cyan-400">完走！ ${wpm} WPM</span>`;
+  document.getElementById('result-detail').textContent =
+    `正確率: ${acc}% | ゴースト: ${ghostWpm > 0 ? ghostWpm : '-'} WPM | 差: ${wpm-ghostWpm > 0 ? '+':''}${ghostWpm > 0 ? wpm-ghostWpm : 'N/A'} WPM`;
+}
+
+renderRankings();
+selectCourse('programming');
+</script>
+</body>
+</html>
